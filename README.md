@@ -7,17 +7,27 @@ captures microphone audio, optionally segments speech with pre-roll, and streams
 it over WebSocket to a Go analysis server that writes WAV files, computes
 quality metrics, runs test-tone/sweep analysis, and produces reports.
 
-The project is new and self-contained. It reuses selected, proven code from
-[`ai-voice`](../ai-voice) and
-[`embedded-iot-client`](../../embedded-iot-client) by vendoring exact upstream
-snapshots; it does not modify either upstream repository.
+The project is new and self-contained. [`embedded-iot-client`](lib/embedded-iot-client)
+is included as a pinned git submodule for MQTT/IoT control. There is **no
+ai-voice dependency**: the recorder implements its own audio, WebSocket, and
+GX8006 code.
 
-**Current status: documentation/design only.** No firmware, server, build, or
-vendored source files exist yet. The next implementation step is the protocol,
-MQTT control, and vendor scaffold described in
-[`docs/protocol.md`](docs/protocol.md),
-[`docs/mqtt-control.md`](docs/mqtt-control.md), and
-[`docs/vendoring.md`](docs/vendoring.md).
+**Current status**
+
+- **Linux device + Go server: implemented and verified end-to-end.** MQTT
+  start/stop (TLS lab broker) opens the WebSocket data plane, PCM audio is
+  captured, and the server writes valid WAVs, frame sidecars, metrics, plots,
+  `summary.csv`, and `report.html`.
+- **Protocol, segmenter, TX queue, GX8006 protocol/source, and app state
+  machine: host-tested** (62 C++ tests) plus Go golden/metrics/tone/server
+  tests.
+- **LN882H + GX8006 platform: implemented and compiles** against the LN882H
+  SDK (text ≈1.19 MB, bss ≈125 KB in the current build). Hardware bring-up
+  (UART/DMA levels, handshake, continuous pickup, TLS heap, soak) is still
+  pending; see [`docs/ln882h.md`](docs/ln882h.md).
+- **No ai-voice dependency.** The recorder reimplements the small audio/WS/GX
+  pieces it needs; the only upstream submodule is
+  [`embedded-iot-client`](lib/embedded-iot-client) for MQTT control.
 
 ---
 
@@ -37,7 +47,7 @@ not just a listening test.
 Key capabilities:
 
 - **MQTT control plane**: remote start/stop/status, always connected, reusing
-  embedded-iot-client's `AppInit`/`IoTCore`/thing-model path like ai-voice.
+  embedded-iot-client's `AppInit`/`IoTCore`/thing-model path.
 - WebSocket data plane over Wi-Fi, connected on demand, with JSON control and
   binary audio frames.
 - **No wake word/KWS**: capture starts on the MQTT `start` command.
@@ -77,7 +87,8 @@ Key capabilities:
 - **Platform adapters**: Linux (miniaudio + libwebsockets) and LN882H + GX8006
   first; ESP32-S3, BK7258, AC791, macOS, and WT01Cx02 follow.
 - **Server** (Go): WebSocket receiver, capture/segment storage, PCM/Opus
-  decode, metrics, analysis, reports, HTTP control API, dashboard.
+  decode, metrics, analysis, reports, HTTP control API, and an embedded
+  React dashboard (`server/web`).
 
 See [`docs/architecture.md`](docs/architecture.md) for the module and threading
 details.
@@ -88,8 +99,8 @@ details.
 
 - **MQTT controls start/stop; WebSocket carries audio.** MQTT is always on so
   the operator can start recording while the data plane is disconnected. The
-  WS reuses embedded-iot-client's `AppInit`/`IoTCore`/thing-model datapoints
-  (`recorderCmd`/`recorderStatus`) exactly where ai-voice uses them.
+  control path reuses embedded-iot-client's `AppInit`/`IoTCore`/thing-model
+  datapoints (`recorderCmd`/`recorderStatus`).
 - **WebSocket is on demand by default** (`ws_mode=on_demand`): connect on MQTT
   `start`, disconnect after `stop` + idle timeout. This saves RAM/power,
   especially on LN882H.
@@ -98,9 +109,9 @@ details.
 - **No wake word/KWS.** Capture starts on MQTT; GX8006 KWS and ESP WakeNet are
   not enabled.
 - **LN882H/GX8006 is Opus-only in the first milestone.** The chip protocol enum
-  lists PCM, but ai-voice's implementation/docs indicate microphone output is
-  Opus in practice. PCM is enabled only after a bench test proves it. The server
-  performs VAD, pre-roll, and segmentation for continuous Opus.
+  lists PCM, but the reference implementation/docs indicate microphone output
+  is Opus in practice. PCM is enabled only after a bench test proves it. The
+  server performs VAD, pre-roll, and segmentation for continuous Opus.
 - **Linux/PCM is the reference diagnostic path**: local PCM, energy VAD, device
   pre-roll, host Opus optional.
 - **JSON `segment_start`/`segment_end` are the sole boundary authority.**
@@ -134,80 +145,149 @@ details.
 
 ---
 
-## Target repository layout
+## Repository layout
 
 ```
-ai/recorder/
+ai/audio-probe/
 ├── README.md
 ├── CLAUDE.md
 ├── docs/
-├── protocol/            # C++ header, JSON schemas, golden vectors
+├── protocol/            # C++ header + golden vectors
 ├── src/
-│   ├── core/            # recorder app/client/capture/segmenter/encoder/tone/telemetry
-│   └── platform/        # linux/, ln882h/, later ESP32-S3/BK7258/AC791/macOS
-├── third_party/         # vendored upstream + provenance.json + patches
-├── build/               # Linux CMake, LN882H SDK project/setup
+│   ├── core/            # app/client/segmenter/encoder/tone/telemetry/control
+│   └── platforms/       # linux/, ln882h/
+├── lib/embedded-iot-client/  # git submodule (MQTT/IoT core)
+├── build/nix/           # Linux CMake
+├── build/ln882h/        # LN882H SDK project + setup
 ├── tests/
-├── tools/               # replay, golden-vector generator, WAV probe
-├── scripts/             # vendor/verify scripts
-└── server/              # Go module: recoderd, analysis, reports, dashboard
+├── scripts/             # vendor/setup/cert/build helpers
+└── server/              # Go module: recorderd, analysis, reports
+    └── web/             # React + Vite dashboard (embedded into the binary)
 ```
 
 ---
 
-## Target quick start (not implemented yet)
+## Quick start
 
-These are the intended commands once the Linux device and Go server exist:
+Dependencies are git submodules and pinned CMake FetchContent packages:
 
 ```bash
-# Build the Linux device
-cmake -S build/linux -B out/linux
-cmake --build out/linux
-ctest --test-dir out/linux
-
-# Control plane: local MQTT broker
-mosquitto -p 1883
-
-# Data plane: analysis server (does not auto-start; MQTT owns control)
-cd server
-go run ./cmd/recorderd -addr :8080 -http :8081 -out ./data
-
-# Run the recorder (MQTT + WS config; compile-time or config file)
-./out/linux/recorder --config recorder.conf \
-  --server ws://127.0.0.1:8080/v1/recorder
-
-# Start recording over MQTT (self-hosted raw mapping)
-mosquitto_pub -t "iot/PID/DEV/raw/down" -m \
-  '{"v":1,"type":"recorder_cmd","id":"c1","action":"start","params":{"mode":"vad"}}'
-
-# Stop recording
-mosquitto_pub -t "iot/PID/DEV/raw/down" -m \
-  '{"v":1,"type":"recorder_cmd","id":"c2","action":"stop"}'
+git submodule update --init --recursive   # embedded-iot-client + nested libs
 ```
 
-The dashboard is at `http://localhost:8081/`; captures/reports are written under
-`server/data/captures/<capture_id>/`. For OneJSON/thing-model platforms, send
-`recorderCmd` as a string property through the platform API instead of the raw
-topic.
+Build and test the Linux device (dependencies are fetched on first configure):
 
-For LN882H, compile-time Wi-Fi **and MQTT** credentials live in a gitignored
-generated `platform_config.h`; see [`docs/ln882h.md`](docs/ln882h.md). The first
-milestone uses Opus-only capture and server-side VAD.
+```bash
+cmake -S . -B out/nix -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build out/nix --target recorder recorder-tests -j
+./out/linux/recorder-tests            # 62 host tests
+
+cd server && go test ./...             # protocol/metrics/tone/WS-API tests
+
+# Optional: decode Opus captures in the Go server (libopus via pkg-config).
+# The default build preserves raw packets and marks them undecoded.
+cd server && go test -tags "opus nolibopusfile" ./internal/audio
+```
+
+Run the full lab loop (MQTT TLS control + WebSocket data + Go server):
+
+```bash
+./scripts/gen_lab_certs.sh             # self-signed CA/server cert in out/certs
+./out/linux/lab-broker -addr :1883 -tls-cert out/certs/server.crt \
+  -tls-key out/certs/server.key
+./out/linux/recorderd -addr :8080 -http :8081 -out ./server/data
+./out/linux/recorder --source mic --server ws://127.0.0.1:8080/v1/recorder \
+  --device-id recorder-linux --mqtt-ca out/certs/ca.crt
+
+# Start/stop over the OneJSON/thing-model MQTT mapping
+./out/linux/recorderctl -ca out/certs/ca.crt -action start \
+  -params '{"mode":"continuous","label":"run-1"}'
+./out/linux/recorderctl -ca out/certs/ca.crt -action stop
+```
+
+The stock embedded-iot-client Paho client always dials `ssl://`, so the lab
+broker must be TLS-enabled for the device MQTT path. The WebSocket data plane
+uses `ws://` for the lab; for WSS, add
+`-cert out/certs/server.crt -key out/certs/server.key` to `recorderd`, run the
+device with `--server wss://localhost:8080/v1/recorder --ca out/certs/ca.crt`,
+and keep `-cert/-key` out of production scripts only if a trusted TLS terminator
+is in front. The WSS + CA path is covered by the saved end-to-end run.
+
+The dashboard is at `http://localhost:8081/`; captures/reports are written under
+`server/data/captures/<capture_id>/`. The device's `recorderCmd` is a
+thing-model internal datapoint and never routes to a serial MCU path.
+
+## Frontend
+
+The React + Vite app lives in [`server/web`](server/web). It lets you:
+
+- browse captures and their segments;
+- play the segment WAV in the browser;
+- view level, transport, spectrum, tone, and server-VAD utterance metrics;
+- inspect the waveform/spectrum plots and download raw sidecars;
+- see live devices and their last telemetry;
+- start/stop recording from the UI (subject to control ownership).
+
+The production build is embedded into the Go server (`server/web/embed.go`), so
+`recorderd` serves it at `/`. Rebuild it after UI changes:
+
+```bash
+./scripts/build_web.sh        # or: make web
+cd server && go build ./...
+```
+
+`server/web/dist` is generated by the build and is embedded with `go:embed`
+(`server/web/embed.go`). Keep it in the repository (it is small) so a clean
+`go build` works; if it is absent, run `make web` first. For UI development, run
+`cd server/web && npm install && npm run dev`; Vite proxies `/api` and `/data`
+to the Go server on `:8081`.
+
+**Recording controls.** The buttons call the server's
+`POST /api/v1/devices/{id}/commands` with `start_capture`/`stop_capture`. By
+design MQTT owns start/stop by default, so the server returns
+`control_owned_by_mqtt` unless the device explicitly allows WS control. For
+lab/frontend control, run the device with:
+
+```bash
+./out/linux/recorder ... --ws-control --ws-always
+```
+
+`--ws-control` sets `allow_ws_capture_control=true`; `--ws-always` keeps the
+WebSocket session connected while idle, so a `start_capture` can reach the
+device. Without `--ws-always`, an idle on-demand device has no WebSocket session
+and the API reports that the device is not connected; start it over MQTT
+instead. MQTT remains the authoritative control plane in production.
+
+For LN882H, see [`docs/ln882h.md`](docs/ln882h.md): credentials are CMake
+variables baked into a generated `platform_config.h`; the first milestone uses
+Opus-only capture and server-side VAD. Until hardware bring-up is complete, the
+capability matrix marks chip-PCM and test-tone as unproven.
+
+```bash
+export CROSS_TOOLCHAIN_ROOT=/usr       # or the official ARM toolchain root
+RECORDER_WIFI_SSID=... RECORDER_WIFI_PASSWORD=... \
+RECORDER_MQTT_ENDPOINT=... RECORDER_MQTT_DEVICE_ID=... \
+RECORDER_MQTT_DEVICE_SECRET=... RECORDER_MQTT_CA_FILE=out/certs/ca.crt \
+RECORDER_WS_URL=ws://192.168.1.100:8080/v1/recorder \
+./scripts/build_ln882h.sh
+```
 
 ---
 
 ## Roadmap
 
-1. Protocol freeze + vendoring/provenance + golden vectors.
-2. Linux device core with synthetic tests.
-3. Linux end-to-end + MQTT control (`recorderCmd`/`recorderStatus`) + Go
+1. ✅ Protocol freeze + golden vectors.
+2. ✅ Linux device core with synthetic/host tests.
+3. ✅ Linux end-to-end + MQTT control (`recorderCmd`/`recorderStatus`) + Go
    transport/WAV/basic metrics.
-4. Full Go analysis server (FFT/THD/sweep/reports/dashboard).
-5. LN882H hardware spike: prove PCM vs Opus, UART DMA, MQTT + WSS/CA,
-   heap/stacks, no wake word.
-6. LN882H diagnostics end-to-end (continuous Opus + server VAD).
-7. Test-tone/sweep acceptance.
-8. Remaining ai-voice platforms (ESP32-S3 first).
+4. ✅ Go analysis server (FFT/THD/tone/reports/dashboard); gain/rate sweep
+   orchestration is partially implemented (tone tests work; sweeps are
+   rejected while MQTT owns start/stop).
+5. 🟡 LN882H platform implemented and compiles; hardware spike (UART DMA
+   levels, PCM-vs-Opus, heap/stacks, TLS coexist, 10-minute soak) pending.
+6. ⬜ LN882H diagnostics end-to-end.
+7. ⬜ Test-tone/sweep acceptance on hardware.
+8. ⬜ ESP32-S3, then BK7258/AC791/macOS/WT01Cx02.
 
 ---
 

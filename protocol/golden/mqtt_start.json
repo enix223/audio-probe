@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "type": "recorder_cmd",
+  "id": "c1",
+  "action": "start",
+  "issued_at_ms": 1760000000000,
+  "expires_at_ms": 1760000005000,
+  "params": {
+    "mode": "vad",
+    "label": "run-1",
+    "duration_ms": 0,
+    "audio": {
+      "format": "pcm_s16le",
+      "sample_rate": 16000,
+      "channels": 1,
+      "frame_ms": 20
+    },
+    "gain_db": null,
+    "pre_roll_ms": 300
+  }
+}

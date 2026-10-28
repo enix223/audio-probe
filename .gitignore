@@ -1,0 +1,12 @@
+# Build output and local captures
+/out/
+/server/data/
+
+# Core dumps. Anchored: a bare `core` would also ignore src/core/.
+/core
+core.[0-9]*
+*.core
+
+/storage.dat
+
+# server/web has its own .gitignore (node_modules, Vite cache, logs).

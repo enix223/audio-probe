@@ -11,13 +11,19 @@ A standalone WiFi audio recorder + diagnostic streamer:
   over WebSocket.
 - Go server writes WAV per segment, computes audio-quality metrics, runs
   test-tone/gain-rate sweep analysis, and produces reports.
-- Reuses selected code from `../ai-voice` and `../../embedded-iot-client` by
-  vendoring exact snapshots. Never modify those upstream repositories.
+- Reuses embedded-iot-client as a git submodule (`lib/embedded-iot-client`) for
+  MQTT/IoT control. It does **not** depend on ai-voice; the small audio/WS/GX
+  pieces the recorder needs are recorder-specific implementations.
 
 ## Current state
 
-**Documentation/design only.** The docs describe the target implementation; no
-firmware, server, build, or vendored source exists yet.
+- Linux device + Go server implemented and verified end-to-end (MQTT TLS
+  start/stop → WebSocket → WAV/metrics/plots/report).
+- 62 C++ host tests and the Go test suite pass.
+- LN882H + GX8006 platform implemented and compiles against the LN882H SDK;
+  hardware bring-up/soak is still pending (see `docs/ln882h.md`).
+- Dependencies are submodules + pinned FetchContent packages. There is no
+  `third_party/upstream` snapshot tree and no ai-voice dependency.
 
 Read these before making changes:
 
@@ -28,7 +34,7 @@ Read these before making changes:
 - `docs/audio-quality-metrics.md` — metric definitions.
 - `docs/ln882h.md` — GX8006/PCM-vs-Opus uncertainty and bring-up.
 - `docs/porting.md` — platform contract/matrix.
-- `docs/vendoring.md` — upstream pins, file manifest, patches.
+- `docs/vendoring.md` — submodule pin, dependency policy.
 - `docs/verification.md` — test plan.
 
 ## Non-negotiable invariants
@@ -67,8 +73,10 @@ Read these before making changes:
 11. **WSS and MQTT TLS with CA verification by default.** Plaintext is a
     develop-only option. Never commit Wi-Fi/MQTT/WS credentials, tokens, or CA
     private material.
-12. **No upstream modifications.** Vendor copies under `third_party/upstream/`
-    with `provenance.json`, hashes, and patches. Keep patches minimal.
+12. **No upstream modifications.** Dependencies are git submodules
+    (`lib/embedded-iot-client`, pinned `b2b145b`). Do not edit the submodule.
+    External C/C++ libraries are pinned FetchContent packages. Changes to
+    upstream behavior belong in recorder-specific code, not in the submodule.
 13. **The server never invents segment metadata.** A missing boundary is a
     fault recorded in the report.
 
@@ -83,54 +91,73 @@ thing model), `AudioSource`, transport writer, clock/config/system adapters,
 and a truthful capability descriptor. No wake word/KWS. No platform-specific
 branches in the protocol core.
 
-## Planned build/run commands
-
-These are targets; they do not exist yet.
+## Build/run commands
 
 ```bash
-# Linux device
-cmake -S build/linux -B out/linux
-cmake --build out/linux
-ctest --test-dir out/linux
+# Dependencies
+git submodule update --init --recursive
 
-# Control plane
-mosquitto -p 1883
+# Linux device + tests
+cmake -S . -B out/nix -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build out/nix --target recorder recorder-tests -j
+./out/linux/recorder-tests
 
-# Go data-plane server (MQTT owns start/stop)
-cd server
-go test ./...
-go run ./cmd/recorderd -addr :8080 -http :8081 -out ./data
+# Go server/tools/tests
+cd server && go test ./...
+go build -o ../out/linux/recorderd ./cmd/recorderd
+go build -o ../out/linux/lab-broker ./cmd/lab-broker
+go build -o ../out/linux/recorderctl ./cmd/recorderctl
 
-# Start/stop over MQTT (self-hosted raw example)
-mosquitto_pub -t "iot/PID/DEV/raw/down" -m \
-  '{"v":1,"type":"recorder_cmd","id":"c1","action":"start","params":{"mode":"vad"}}'
-mosquitto_pub -t "iot/PID/DEV/raw/down" -m \
-  '{"v":1,"type":"recorder_cmd","id":"c2","action":"stop"}'
+# React dashboard (server/web); dist is embedded into recorderd
+./scripts/build_web.sh          # or: make web
+cd server/web && npm run dev    # optional dev server, proxies /api + /data to :8081
 
-# LN882H
-make ln882h-recorder-setup
-make ln882h-recorder-build
-make ln882h-recorder-flash
-make ln882h-recorder-monitor
+# Lab control/data plane. Paho always uses ssl://, so the lab broker is TLS.
+./scripts/gen_lab_certs.sh
+./out/linux/lab-broker -addr :1883 -tls-cert out/certs/server.crt \
+  -tls-key out/certs/server.key
+./out/linux/recorderd -addr :8080 -http :8081 -out ./server/data
+./out/linux/recorder --source mic --server ws://127.0.0.1:8080/v1/recorder \
+  --device-id recorder-linux --mqtt-ca out/certs/ca.crt
+./out/linux/recorderctl -ca out/certs/ca.crt -action start \
+  -params '{"mode":"continuous","label":"run-1"}'
+./out/linux/recorderctl -ca out/certs/ca.crt -action stop
+
+# LN882H (hardware bring-up pending)
+export CROSS_TOOLCHAIN_ROOT=/usr   # or the official ARM toolchain root
+./build/ln882h/setup.sh            # or: make ln882h-recorder-setup
+RECORDER_WIFI_SSID=... RECORDER_WIFI_PASSWORD=... \
+RECORDER_MQTT_ENDPOINT=... RECORDER_MQTT_DEVICE_ID=... \
+RECORDER_MQTT_DEVICE_SECRET=... RECORDER_MQTT_CA_FILE=out/certs/ca.crt \
+RECORDER_WS_URL=ws://192.168.1.100:8080/v1/recorder \
+./scripts/build_ln882h.sh          # or: make ln882h-recorder-build
 ```
 
-## Vendoring rules
+The MQTT mapping is the OneNET OneJSON/thing-model path (`$sys/<product>/<device>/...`)
+with `recorderCmd`/`recorderStatus` string properties. The stock self-hosted raw
+core forwards downlink bytes to the MCU serial path and is not used.
 
-- Upstream pins: `ai-voice@2f8818e`; `embedded-iot-client@f787e55` preferred,
-  `b2b145b` fallback only with documented API-drift reason.
-- Copy exact files, preserve upstream-relative paths, record hashes in
-  `third_party/provenance.json`, run `scripts/verify_provenance.sh`.
-- Patches live in `third_party/patches/` with notes. Do not edit vendored files
-  without a corresponding patch record.
+## Dependency rules
+
+- `lib/embedded-iot-client` is a git submodule pinned at `b2b145b`. The
+  preferred `f787e55` tree lacks `RegisterInternalDatapoint`,
+  `kEventInternalDatapoint`, `kEventDatapointReport`, and `NamedDatapoint`,
+  which the MQTT control invariant requires. `b2b145b` is the commit the
+  pinned ai-voice snapshot vendored, so its APIs match the recorder's expected
+  composition. See `docs/vendoring.md`.
+- Initialize nested submodules with
+  `git submodule update --init --recursive` (rapidjson, cpp-httplib, nonstd).
+- Do not modify the submodule. The recorder-specific MQTT control adapter lives
+  in `src/core/control/`.
 - The normal build requires embedded-iot-client's MQTT/IoT core, thing model,
-  and command handler; BLE provisioning and OTA are optional.
-- Do not compile ai-voice `Application`, `AudioService`, cloud voice protocols,
-  i18n, wake-word/KWS, voice-specific BLE provisioner, or `SessionGateFilter`.
-- Do not compile `HalAudioGx8006` unchanged; implement the recorder-specific
-  byte-oriented `Gx8006AudioSource`.
+  and command handler; BLE provisioning and OTA are disabled.
+- External libraries are pinned FetchContent packages: miniaudio 0.11.21,
+  opus 1.5.2, libwebsockets 4.3.3; embedded-iot-client fetches mbedTLS 3.6.0
+  and Paho MQTT C 1.3.13.
+- The recorder does not compile ai-voice code at all. The GX8006 and WebSocket
+  transports are recorder-specific implementations.
 - The `recorderCmd` internal datapoint must never be routed to the MCU serial
-  path. Self-hosted raw MQTT needs the recorder-specific adapter described in
-  `docs/mqtt-control.md`.
+  path. The Linux/LN882H builds use the OneNET OneJSON/thing-model mapping.
 
 ## Protocol changes
 

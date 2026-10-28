@@ -1,0 +1,57 @@
+{
+  "type": "hello",
+  "protocol_version": 1,
+  "device": {
+    "id": "recorder-linux",
+    "model": "linux-pcm",
+    "firmware": "0.1.0",
+    "chip": "linux",
+    "audio_frontend": "miniaudio",
+    "boot_id": "6f1c0a2e"
+  },
+  "clock": {
+    "monotonic_ms": 123456,
+    "wall_ms": 1760000000000,
+    "synced": true,
+    "capture_t0_mono_us": 0
+  },
+  "control": {
+    "owner": "mqtt",
+    "allow_ws_capture_control": false,
+    "ws_mode": "on_demand",
+    "mqtt_lost_stop_timeout_ms": 30000,
+    "max_capture_ms": 1800000
+  },
+  "capabilities": {
+    "formats": {
+      "pcm_s16le": {
+        "sample_rates": [16000, 48000],
+        "channels": [1, 2],
+        "frame_ms": [10, 20, 40, 60],
+        "payload_max": 4096,
+        "channel_map": ["mic0"]
+      },
+      "opus": {
+        "sample_rates": [16000, 48000],
+        "channels": [1, 2],
+        "frame_ms": [10, 20, 40, 60],
+        "bitrate": [6000, 64000],
+        "payload_max": 255,
+        "encoders": ["host"]
+      }
+    },
+    "vad": ["server", "energy"],
+    "test_tone": {
+      "waveforms": ["sine", "square", "sweep"],
+      "frequency_hz": {"min": 20, "max": 20000},
+      "max_amplitude_dbfs": 0
+    },
+    "speaker": {"min": 0, "max": 100, "unit": "percent"},
+    "loopback": false,
+    "device_pre_roll_max_ms": 5000,
+    "server_pre_roll": true,
+    "max_segment_ms": 30000,
+    "tx_queue_ms": 3000,
+    "limits": {"max_frame_bytes": 8192}
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "type": "hello",
+  "protocol_version": 1,
+  "device": {
+    "id": "bcbe50000006",
+    "model": "ln882h-gx8006",
+    "firmware": "0.1.0",
+    "chip": "ln882h",
+    "audio_frontend": "gx8006",
+    "boot_id": "8f3c1a2e"
+  },
+  "clock": {
+    "monotonic_ms": 123456,
+    "wall_ms": 1760000000000,
+    "synced": false,
+    "capture_t0_mono_us": 0
+  },
+  "control": {
+    "owner": "mqtt",
+    "allow_ws_capture_control": false,
+    "ws_mode": "on_demand",
+    "mqtt_lost_stop_timeout_ms": 30000,
+    "max_capture_ms": 1800000
+  },
+  "capabilities": {
+    "formats": {
+      "opus": {
+        "sample_rates": [16000],
+        "channels": [1],
+        "frame_ms": [20, 40, 60],
+        "bitrate": [6000, 64000],
+        "payload_max": 255,
+        "encoders": ["gx8006"]
+      }
+    },
+    "vad": ["server", "device"],
+    "gain": {"min": 0, "max": 42, "step": 6, "unit": "dB"},
+    "loopback": false,
+    "device_pre_roll_max_ms": 0,
+    "server_pre_roll": true,
+    "max_segment_ms": 30000,
+    "tx_queue_ms": 3000,
+    "limits": {"max_frame_bytes": 2048}
+  }
+}

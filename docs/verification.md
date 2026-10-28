@@ -5,7 +5,27 @@ server, and LN882H hardware. It is written to be executable once the
 implementation exists; commands below are the target interfaces from
 `docs/architecture.md`.
 
-Status: design. No code exists yet.
+Status: host verification is implemented and passing; LN882H hardware checks
+remain pending. The checkboxes below are the full acceptance plan; they are not
+all complete. Measured results so far:
+
+| Check | Result |
+|---|---|
+| C++ host tests (`out/linux/recorder-tests`) | **62/62 pass** |
+| Go tests (`cd server && go test ./...`) | **pass** (protocol golden vectors, metrics, tone, WAV, WS API E2E, HTTP ownership) |
+| Go Opus decode (`go test -tags "opus nolibopusfile"`, libopus 1.5.2) | **pass** (`TestOpusRoundTrip`: libopus encode/decode fixture) |
+| Protocol golden vectors (C++ + Go) | pass, byte-exact |
+| Linux MQTT TLS start/stop → WS → capture → WAV/metrics/plots/report | **verified** with the TLS lab broker + `recorderd`; 5.02 s / 251 frames / 0 loss in the final plaintext-WS run (earlier 9.88 s run also passed) |
+| Linux MQTT TLS + WSS/CA | **verified** `recorderd -cert/-key` with the lab CA and `--server wss://localhost:8080`: 4.02 s / 201 frames / 0 loss, valid WAV/metrics/report |
+| Embedded React dashboard + segment API | **verified**: `/` and `/assets/*` served from the Go binary; client route fallback; `GET /captures/{id}/segments` returns metrics/audio flags |
+| Frontend start/stop control | **verified** against a device run with `--ws-control --ws-always`: `POST /api/v1/devices/.../commands` start/stop returned `ack`; the first and second recordings produced segment audio/metrics. MQTT ownership still returns `control_owned_by_mqtt` when WS control is not enabled. |
+| Linux `test_tone` command path | implemented and unit-tested; not exercised with a physical speaker in the headless lab |
+| LN882H firmware build (Ubuntu arm-none-eabi 13.2.1) | **compiles**: text ≈1.19 MB, bss ≈125 KB (static size only) |
+| LN882H UART/DMA, GX8006 handshake, continuous pickup, TLS heap, soak | **not run** (no board in this environment) |
+
+The Linux end-to-end run used `--source file:` for deterministic audio; the
+microphone path uses the same `LinuxAudioSource` wrapper around miniaudio and is
+covered by the build/unit tests but was not exercised with a physical mic here.
 
 ---
 

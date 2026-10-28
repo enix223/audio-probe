@@ -1,0 +1,13 @@
+{
+  "type": "sweep",
+  "gains_db": [0, 12, 24, 36],
+  "rates_hz": [16000, 48000],
+  "tone": {
+    "waveform": "sine",
+    "frequency_hz": 1000,
+    "amplitude_dbfs": -6,
+    "duration_ms": 3000,
+    "fade_ms": 20,
+    "capture": true
+  }
+}

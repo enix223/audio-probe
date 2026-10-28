@@ -7,9 +7,10 @@ transport, clock, configuration, and a **verified capability descriptor**.
 This guide lists what a platform must implement, the known platform notes, and
 the checklist for adding a target without changing the protocol.
 
-Status: Linux and LN882H are the first milestones. Other ai-voice platforms are
-follow-on ports. Capabilities marked **TBD** must be bench-verified before being
-advertised.
+Status: Linux is implemented and verified end-to-end. LN882H + GX8006 is
+implemented and compiles; its hardware capabilities remain unproven until the
+bench checklist in [`verification.md`](verification.md) §8 passes. Capabilities
+marked **unproven**/**TBD** must be bench-verified before being advertised.
 
 ---
 
@@ -130,8 +131,8 @@ matrix from another platform/board without testing.
 
 | Platform | MQTT control | PCM | Opus | Device VAD | Server VAD | Gain | Test tone | Loopback | Max frame | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Linux (miniaudio) | yes (Paho) | yes | host | energy | yes | no | speaker | optional | 4096 B | first milestone |
-| LN882H + GX8006 | yes (coreMQTT) | unproven | chip | chip | yes | chip | unverified | no | 2048 B | first milestone, Opus-only |
+| Linux (miniaudio) | yes (Paho) | yes | host | energy | yes | no | speaker if present | no | 4096 B | **verified end-to-end** |
+| LN882H + GX8006 | yes (coreMQTT) | unproven | chip | unproven | yes | chip | omitted | no | 2048 B | **implemented; compiles; hardware bring-up pending** |
 | macOS (miniaudio) | yes (Paho) | yes | host | energy | yes | no | speaker | optional | 4096 B | follow-on |
 | ESP32-S3 + ES8311 | yes (esp-mqtt) | yes | host | energy/ESP-SR | yes | 0–42 dB | speaker | no | 4096 B | follow-on |
 | ESP32-S3 + INMP441/MAX98357 | yes (esp-mqtt) | yes | host | energy | yes | no | speaker | no | 4096 B | follow-on |
@@ -206,12 +207,12 @@ embedded-iot-client.
 
 ### 4.1 Linux (first milestone)
 
-- Capture: ai-voice `HalAudioInLinux`/miniaudio (ALSA/PulseAudio). Preallocate
-  the read buffer; use `PcmFrameAccumulator`.
-- Transport: libwebsockets. Patch the wrapper:
-  - remove the 4096-byte truncation,
-  - queue complete messages,
-  - write only from the lws service/writable context.
+- Capture: recorder-specific `LinuxAudioSource` over miniaudio
+  (ALSA/PulseAudio). The callback only writes a lock-free S16 ring; framing and
+  stats run on the app task.
+- Transport: recorder-specific `WsClientLinux` over libwebsockets. Complete
+  messages are queued; only the lws service thread writes; a >4096-byte message
+  is never truncated (host test covers 4124 bytes).
 - MQTT control: Paho MQTT + mbedTLS/OpenSSL, embedded-iot-client `AppInit`/
   `IoTCore`/thing model. No wake word.
 - PCM + energy VAD + device pre-roll is the reference diagnostic path.
@@ -229,10 +230,11 @@ embedded-iot-client.
 
 ### 4.3 ESP32-S3 + ES8311
 
-- Reuse ai-voice `HalAudioES8311` (I2S + `esp_codec_dev`), with a preallocated
-  read buffer to avoid per-call PSRAM allocation.
-- ES8311 ADC produces stereo; de-interleave to mono as ai-voice does; do not
-  open with `channel=1` (RX can return zeros).
+- Implement a recorder-specific ES8311 source (I2S + `esp_codec_dev`) with a
+  preallocated read buffer to avoid per-call PSRAM allocation. The ai-voice HAL
+  is a reference only; do not add an ai-voice dependency.
+- ES8311 ADC produces stereo; de-interleave to mono; do not open with
+  `channel=1` (RX can return zeros).
 - Mic gain 0–42 dB in 6 dB steps; verify the register/`esp_codec_dev` path.
 - MQTT control: `esp-mqtt` via embedded-iot-client `AppInit`/`IoTCore`/thing
   model. No WakeNet/KWS; capture starts on MQTT.
@@ -246,8 +248,7 @@ embedded-iot-client.
 ### 4.4 ESP32-S3 + INMP441/MAX98357
 
 - I2S RX-only mic (INMP441) and I2S TX speaker (MAX98357); no codec gain.
-- Preallocate I2S buffers; stereo slots with left-channel extraction as in
-  ai-voice.
+- Preallocate I2S buffers; extract the left channel from stereo slots.
 - Energy VAD + host Opus; test tone via MAX98357 (hardware GAIN pin, no
   software volume).
 
@@ -260,8 +261,9 @@ embedded-iot-client.
 
 ### 4.6 BK7258
 
-- Reuse ai-voice Beken HAL/WS. The three-core layout may place audio on a
-  dedicated CPU; respect its threading/mailbox rules.
+- Use the Beken SDK HAL/WS as a reference and write recorder-specific adapters.
+  The three-core layout may place audio on a dedicated CPU; respect its
+  threading/mailbox rules.
 - Determine whether the mic path is PCM or a co-processor format; advertise only
   verified formats.
 - WS/TLS memory and reconnect behavior must be measured.
@@ -269,8 +271,8 @@ embedded-iot-client.
 
 ### 4.7 AC791 (Jieli)
 
-- Reuse ai-voice Jieli HAL/WS. The audio subsystem may have its own buffering and
-  format constraints.
+- Use the Jieli SDK HAL/WS as a reference and write recorder-specific adapters.
+  The audio subsystem may have its own buffering and format constraints.
 - Verify PCM availability and sample rates; host Opus may be expensive.
 - TBD: gain, test tone, loopback, max frame.
 

@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "type": "recorder_cmd",
+  "id": "c2",
+  "action": "stop",
+  "params": {
+    "reason": "operator"
+  }
+}

@@ -5,7 +5,10 @@ This is the project execution plan. The normative wire contract is
 [`architecture.md`](architecture.md); tests are in
 [`verification.md`](verification.md).
 
-Status: documentation phase complete. No code has been written yet.
+Status: Phases 1–4 are implemented and host-verified. Phase 5 (LN882H) is
+implemented and compiles against the LN882H SDK; hardware bring-up and soak are
+pending. Phases 6–8 remain. See [`verification.md`](verification.md) for what
+was actually run.
 
 ---
 
@@ -52,6 +55,11 @@ Locked decisions:
 
 ## 2. Reuse summary
 
+> **Update:** the project no longer depends on ai-voice. The table below is the
+> original reference map; the implemented recorder uses its own audio, VAD,
+> Opus, WebSocket, and GX8006 code under `src/core/` and `src/platforms/`.
+> embedded-iot-client remains the only upstream submodule.
+
 | Need | Source |
 |---|---|
 | HAL interfaces, audio frames/pipeline/filters, accumulator, SPSC ring | ai-voice `src/core/audio/` |
@@ -97,19 +105,20 @@ ai/recorder/
 
 ## 4. Phases
 
-### Phase 1 — Scaffold + protocol freeze
+### Phase 1 — Scaffold + protocol freeze ✅
 
 - Create repo layout, vendoring script, `provenance.json`,
   `scripts/verify_provenance.sh`.
 - Write `docs/protocol.md` (done), `protocol/cl_recorder_protocol.h`, JSON
   schemas, golden binary/JSON vectors.
-- Inspect embedded-iot-client `f787e55` against ai-voice `2f8818e`; pin or
-  document fallback to `b2b145b`.
+- ~~Inspect embedded-iot-client `f787e55` against ai-voice `2f8818e`~~ Done:
+  `f787e55` lacks the internal-datapoint APIs; the submodule is pinned at
+  `b2b145b` with the reason recorded in `docs/vendoring.md`.
 - Go protocol package + header codec + golden tests.
 - Verify: provenance hashes pass; C++/Go parsers agree on every vector;
   malformed/oversized vectors rejected.
 
-### Phase 2 — Linux device core with synthetic audio
+### Phase 2 — Linux device core with synthetic audio ✅
 
 - Implement `AudioSource` (Linux miniaudio), `RecorderSegmenter` (energy VAD,
   pre-roll, min-speech/silence), `RecorderEncoder` (PCM + host Opus),
@@ -120,7 +129,7 @@ ai/recorder/
 - Verify: synthetic speech/silence produces expected segments; no duplicate
   pre-roll; ASAN/UBSAN clean.
 
-### Phase 3 — Linux end-to-end + MQTT control + Go transport
+### Phase 3 — Linux end-to-end + MQTT control + Go transport ✅ (both `ws://` and `wss://` + CA verified)
 
 - Implement `RecorderClient` (hello/ack, command queue, reconnect), Linux lws
   writer integration (no truncation, service-thread writes), file storage/POSIX
@@ -137,7 +146,7 @@ ai/recorder/
   server restart creates a new capture with no duplicate audio; ack ordering;
   continuous mode levels without VAD.
 
-### Phase 4 — Full Go analysis server
+### Phase 4 — Full Go analysis server ✅ (gain/rate sweep orchestration partial)
 
 - libopus decode; FFT metrics (spectrum/centroid/flatness/rolloff/hum); noise
   floor/SNR; THD/THD+N; frequency response; gain/rate comparison; reports/plots;
@@ -146,7 +155,7 @@ ai/recorder/
 - Verify: known 1 kHz tone at −6 dBFS yields expected frequency/RMS/THD+N/SNR;
   Opus fixture decodes; reports reproducible.
 
-### Phase 5 — LN882H hardware spike
+### Phase 5 — LN882H hardware spike 🟡 (platform implemented; hardware pending)
 
 - UART1 DMA at 1 Mbps, GX8006 handshake, compile-time WiFi/MQTT, MQTT TLS +
   WSS/CA, heap/stack measurement. No wake word/KWS; mic/VAD session control
@@ -224,10 +233,10 @@ ai/recorder/
 
 ## 7. Immediate next step
 
-Implement Phase 1: create the protocol header/schemas/golden vectors, the
-vendoring/provenance scaffold, and the Go protocol package. Then build the Linux
-device core (Phase 2), the MQTT control plane + server transport (Phase 3), and
-only then touch LN882H hardware.
-
-Do not start firmware or server code before the protocol vectors, MQTT control
-contract, and vendoring provenance are in place.
+Run the LN882H hardware bring-up checklist in
+[`verification.md`](verification.md) §8 and [`ln882h.md`](ln882h.md) §10:
+UART1 DMA at 1 Mbps, GX8006 handshake stability, PCM-vs-Opus discovery,
+continuous pickup/soak, MQTT TLS + WSS/CA coexistence, heap/stack high-water
+marks, and a 10-minute soak. Update the capability matrix only with measured
+values. In parallel, complete the server-orchestrated gain/rate sweep API
+(Phase 4 remainder) for devices where WS owns capture control.

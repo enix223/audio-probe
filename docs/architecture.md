@@ -4,8 +4,11 @@ This document describes how the recorder is structured, how its threads and
 queues are owned, and how the device and server fit together. The wire contract
 is in [`protocol.md`](protocol.md); this file is about the implementation.
 
-Status: design. The repository currently contains documentation only; source
-directories listed below are the target layout for the implementation phases.
+Status: implemented for the Linux device + Go server, and for the LN882H
+platform (compiled, hardware pending). The actual layout mirrors ai-voice:
+`src/core/<module>/`, `src/platforms/linux/`, `src/platforms/ln882h/`,
+`build/nix`, `build/ln882h`, and `lib/embedded-iot-client` as a submodule.
+The module maps below remain accurate; paths are under `src/platforms/` (plural).
 
 ---
 
@@ -422,7 +425,12 @@ Rules:
 
 ## 6. Reuse and vendoring map
 
-### 6.1 Reuse from ai-voice (selected, vendored)
+### 6.1 ai-voice reuse (retired)
+
+The recorder no longer depends on ai-voice. The table below documents the
+original reference map; the implemented code is recorder-specific under
+`src/core/audio/`, `src/core/ws/`, `src/platforms/linux/`, and
+`src/platforms/ln882h/`.
 
 | Component | Use |
 |---|---|
@@ -505,10 +513,10 @@ these adapters are platform-specific. See [`porting.md`](porting.md).
 ### 8.1 Linux
 
 - Root `CMakeLists.txt` + presets delegate to `build/linux`.
-- Sources: recorder core/platform, vendored ai-voice Linux HAL/WS/Opus, and the
-  embedded-iot-client IoT stack (storage, config, system, eventbus, scheduler,
-  threading, logger, serial, MQTT/IoT core, thing model, command handler, NTP,
-  HTTP as needed).
+- Sources: recorder core/platform, the recorder's own Linux audio/WS code, and
+  the embedded-iot-client IoT stack (storage, config, system, eventbus,
+  scheduler, threading, logger, serial, MQTT/IoT core, thing model, command
+  handler, NTP, HTTP as needed).
 - Targets: `recorder-core`, `recorder-platform-linux`, `recorder`,
   `recorder-unit-tests`.
 - Dependencies: miniaudio, libwebsockets, libopus, Paho MQTT, mbedTLS/OpenSSL
@@ -613,7 +621,7 @@ server/
 ├── internal/report/            # HTML/JSON/CSV/plots
 ├── internal/storage/           # capture filesystem layout
 ├── internal/httpapi/           # REST control API, downloads, dashboard
-└── web/                        # embedded minimal status UI
+└── web/                        # React + Vite dashboard (embedded via go:embed)
 ```
 
 Dependencies: `github.com/coder/websocket`, `gonum.org/v1/gonum/dsp/fourier`,
@@ -672,10 +680,11 @@ metrics, loss/jitter, config, and tone/sweep labels.
   202). Under MQTT control ownership, `start_capture`/`stop_capture` are
   rejected with `control_owned_by_mqtt`; the server must not bypass MQTT.
 - `POST /api/v1/tests` (tone/gain sweep/rate sweep orchestration)
-- `GET /` minimal dashboard: devices/captures, live telemetry, configure/test
-  actions; start/stop is shown as MQTT-controlled and disabled unless the
-  device reports `control.owner=ws` or explicitly allows WS control. Static
-  files under `/data/`.
+- `GET /` React dashboard (`server/web`, embedded): devices/captures, live
+  telemetry, segment audio player, metrics/plots, and start/stop controls.
+  Start/stop is MQTT-controlled by default and returns
+  `control_owned_by_mqtt` unless the device reports `control.owner=ws` or
+  explicitly allows WS control. Static files under `/data/`.
 
 ### 11.6 Server failure behavior
 

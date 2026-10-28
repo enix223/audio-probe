@@ -1,0 +1,36 @@
+#pragma once
+
+// Generated from src/platforms/linux/config/platform_config.h.in.
+// Do not put real credentials in the checked-in template or in CMake cache
+// files that are committed.  Pass them on the configure command line instead.
+
+// --- MQTT control plane (OneJSON/thing-model mapping) -----------------------
+#define CONFIG_IOT_PLATFORM_ONENET
+#define CONFIG_IOT_PLATFORM_ONENET_PROTOCOL_ONEJSON 1
+#define CONFIG_IOT_DEVICE_ID "@RECORDER_MQTT_DEVICE_ID@"
+#define CONFIG_IOT_DEVICE_SECRET "@RECORDER_MQTT_DEVICE_SECRET@"
+#define CONFIG_IOT_PLATFORM_ONENET_PRODUCT_ID "@RECORDER_MQTT_PRODUCT_ID@"
+#define CONFIG_IOT_PLATFORM_ONENET_ENDPOINT "@RECORDER_MQTT_ENDPOINT@"
+#define CONFIG_IOT_PLATFORM_ONENET_PORT @RECORDER_MQTT_PORT@
+#define CONFIG_IOT_PLATFORM_ONENET_DEVICE_LEVEL_AUTH 0
+#define CONFIG_IOT_PLATFORM_ONENET_CA_CERT "@RECORDER_MQTT_CA_CERT@"
+#define CONFIG_IOT_THING_MODEL_API_URL ""
+#define CONFIG_IOT_THING_MODEL_STRING R"RECORDER_TM(@RECORDER_THING_MODEL@)RECORDER_TM"
+
+// --- Logging / optional features -------------------------------------------
+#define CONFIG_IOT_LOG_LEVEL @RECORDER_LOG_LEVEL@
+#define CONFIG_IOT_BLE_PROVISION_ENABLE 0
+#define CONFIG_IOT_OTA_ENABLE 0
+#define CONFIG_IOT_OTA_POLL_INTERVAL_SEC 0
+#define CONFIG_IOT_OTA_API_URL ""
+#define CONFIG_IOT_METADATA_UPLOAD_INTERVAL_SEC 0
+#define CONFIG_IOT_HTTPS_CA_CERT ""
+
+// Linux has no MCU serial target. The recorder's recorderCmd is an internal
+// datapoint and is never routed here; the command handler opens this port
+// only because the stock composition root constructs it.
+#define CONFIG_IOT_BIZ_SERIAL_DEVICE "/dev/ttyUSB0"
+
+// The defaults file supplies every remaining CONFIG_IOT_* value (thread
+// stacks, NTP, Wi-Fi placeholders, vendor CA bundles, main-thread flags).
+#include "platform_config_defaults.h"

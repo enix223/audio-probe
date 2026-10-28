@@ -1,0 +1,42 @@
+{
+  "type": "hello_ack",
+  "protocol_version": 1,
+  "session_id": "01J8Z3Q7M2W9R4T6X0C5V8B1N3",
+  "capture_id": "01J8Z4A1D7K2P5S9H3M6Q0T8V2",
+  "server_time_ms": 1760000000123,
+  "control": {
+    "owner": "mqtt",
+    "allow_ws_capture_control": false,
+    "ws_mode": "on_demand"
+  },
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate": 16000,
+    "channels": 1,
+    "frame_ms": 20,
+    "bits_per_sample": 16,
+    "endianness": "little",
+    "interleaved": true
+  },
+  "capture": {
+    "mode": "vad",
+    "pre_roll_ms": 300,
+    "max_segment_ms": 15000,
+    "vad": {
+      "engine": "energy",
+      "onset_ms": 120,
+      "silence_ms": 700,
+      "min_speech_ms": 150,
+      "guard_ms": 0,
+      "threshold_db": 6,
+      "send_short_segments": false
+    }
+  },
+  "telemetry": {
+    "frame_stats": true,
+    "level_interval_ms": 500,
+    "stats_interval_ms": 5000
+  },
+  "limits": {"max_frame_bytes": 2048, "max_queue_ms": 3000},
+  "start": false
+}

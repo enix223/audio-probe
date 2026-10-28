@@ -1,0 +1,17 @@
+{
+  "type": "segment_end",
+  "capture_id": "01J8Z4A1D7K2P5S9H3M6Q0T8V2",
+  "segment_id": 12,
+  "reason": "silence",
+  "t_ms": 126200,
+  "frames": 140,
+  "frames_dropped": 0,
+  "pre_roll_frames": 15,
+  "duration_ms": 2800,
+  "speech_ms": 2100,
+  "rms_dbfs": -28.4,
+  "peak_dbfs": -3.1,
+  "clip_pct": 0.0,
+  "noise_dbfs": -61.2,
+  "tx_drops": 0
+}

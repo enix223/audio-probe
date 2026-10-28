@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "type": "recorder_status",
+  "id": "c1",
+  "state": "capturing",
+  "capture_id": "01J8Z4A1D7K2P5S9H3M6Q0T8V2",
+  "segment_id": 12,
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate": 16000,
+    "channels": 1,
+    "frame_ms": 20
+  },
+  "gain_db": null,
+  "queue": {"tx_ms": 0, "drops": 0, "reconnects": 0},
+  "error": null,
+  "ts_ms": 1760000000123
+}

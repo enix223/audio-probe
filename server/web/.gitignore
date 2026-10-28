@@ -1,0 +1,27 @@
+# Node dependencies
+node_modules/
+
+# Vite cache and local overrides
+.vite/
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
+*.sw?
+
+# NOTE: dist/ is intentionally NOT ignored. server/web/embed.go uses
+# //go:embed all:dist, so a clean `go build` needs the production build in the
+# tree. Regenerate it with ./scripts/build_web.sh (or `make web`).

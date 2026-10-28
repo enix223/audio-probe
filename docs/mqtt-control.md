@@ -14,6 +14,31 @@ The recorder uses **MQTT for control** and **WebSocket for audio/data**:
 This document defines the MQTT control contract. The audio protocol is in
 [`protocol.md`](protocol.md).
 
+**Implementation status.** The Linux and LN882H builds use the OneJSON /
+thing-model mapping (§3.1) with a static thing model:
+
+```json
+[{"i":1,"n":"recorderCmd","t":9,"l":1024},
+ {"i":2,"n":"recorderStatus","t":9,"l":1024}]
+```
+
+`recorderCmd` is registered with `IoTCore::RegisterInternalDatapoint` and reaches
+the app through `kEventInternalDatapoint`; status is published with
+`kEventDatapointReport`. The topics are OneNET's
+`$sys/<product>/<device>/thing/property/{set,post,post/reply}`.
+
+The lab broker (`server/cmd/lab-broker`) is a small MQTT 3.1.1/5 broker that
+deliberately allows the `$sys/...` namespace (general-purpose brokers may
+reserve `$SYS` case-insensitively). `recorderctl` publishes the property set and
+prints the matching status.
+
+The stock embedded-iot-client Linux/LN882H Paho client always dials `ssl://`;
+use a TLS lab broker and pass the CA (Linux: `--mqtt-ca`; LN882H:
+`RECORDER_MQTT_CA_FILE`). Plaintext MQTT would require a Paho client patch and
+is **not** available in this build. The self-hosted raw mapping (§3.2) is not
+implemented because the stock self-hosted core forwards downlink bytes to the
+MCU serial path; the OneJSON path is the supported one.
+
 ---
 
 ## 1. Why split control and data
@@ -387,6 +412,18 @@ MQTT is the authoritative control plane for start/stop:
 - The device reports the actual state on both MQTT status and WS
   `capture_state`, so the two planes never disagree about what is happening.
 
+**Frontend controls.** The React dashboard (`server/web`) exposes Start/Stop
+buttons that call `POST /api/v1/devices/{id}/commands` on the Go server, which
+forwards `start_capture`/`stop_capture` over the device WebSocket. Under the
+default MQTT ownership the server returns `control_owned_by_mqtt`. For lab
+control, run the device with `--ws-control --ws-always`:
+`--ws-control` sets `allow_ws_capture_control=true`, and `--ws-always` keeps a
+WebSocket session open while idle so a start command has somewhere to go.
+Without `--ws-always`, an idle `on_demand` device has no WS session and the
+server reports that the device is not connected; start it over MQTT instead.
+Production start/stop remains MQTT-owned; an optional OneNET bridge is described
+in §11.
+
 ### 6.2 WebSocket connection policy
 
 `ws_mode`:
@@ -499,3 +536,73 @@ longer applies.
   on LN882H.
 
 See [`verification.md`](verification.md) for the full matrix.
+
+---
+
+## 11. Server-side OneNET consumption from Go (informational)
+
+The recorder's Go server is currently a WebSocket data-plane receiver; it is
+**not** an OneNET client. The device uses MQTT for control/status and WebSocket
+for audio. If a deployment wants the Go backend or the React dashboard to see
+OneNET status or initiate recordings through OneNET, there are two patterns.
+
+### 11.1 OneNET application MQTT long connection
+
+OneNET exposes an application-side MQTT 3.1.1 long connection. A Go MQTT client
+(e.g. `github.com/eclipse/paho.mqtt.golang`) can connect with the application
+credentials from the OneNET console and subscribe to the device system topics:
+
+- `$sys/{productId}/{deviceName}/thing/property` — property reports
+- `$sys/{productId}/{deviceName}/thing/lifecycle` — lifecycle changes
+- `$sys/{productId}/{deviceName}/thing/event` — event reports
+
+Authentication uses an application `clientid` plus `username` of
+`userid/{userId}` or `projectid/{projectId}/groupid/{groupId}` and an OneNET
+token as `password`; the exact endpoint/port comes from the console. The
+application long connection **does not cache messages**; use OneNET's message
+queue (MQ) or HTTP push when durable delivery is required. This path carries
+control/status and telemetry, not the audio stream; audio remains on the
+recorder WebSocket.
+
+Note the topic naming difference: devices publish to
+`.../thing/property/post`, while the application subscription topic is
+`.../thing/property`. Verify the current topic in the OneNET console.
+
+### 11.2 OneNET message queue, including Pulsar-backed instances
+
+OneNET's message queue (MQ) / data-subscription service may expose an Apache
+Pulsar endpoint depending on the instance and console version. The console
+provides the service URL, topic, subscription, and token/auth mode. When raw
+Pulsar is exposed, use the official pure-Go client:
+
+```go
+import "github.com/apache/pulsar-client-go/pulsar"
+
+client, _ := pulsar.NewClient(pulsar.ClientOptions{
+    URL:            "pulsar+ssl://<host>:<port>",
+    Authentication: pulsar.NewAuthenticationToken("<token>"),
+})
+consumer, _ := client.Subscribe(pulsar.ConsumerOptions{
+    Topic:            "<topic from the OneNET MQ instance>",
+    SubscriptionName: "recorder-backend",
+    Type:             pulsar.Shared,
+})
+```
+
+Public OneNET auth docs define the MQ token resource as `mqs/{MQ_NAME}`. If the
+instance exposes only OneNET MQ topics/protocol rather than raw Pulsar, use the
+OneNET MQ SDK or the application MQTT long connection instead.
+
+This repository does not yet implement an OneNET subscriber. Adding it would be
+a `server/internal/onenet` adapter behind flags that feeds status/telemetry into
+the dashboard and (via an OneNET command API/MQ producer) start/stop commands.
+It must use application/MQ credentials, not the device's MQTT client identity,
+and must not replace the WebSocket audio path.
+
+References:
+
+- [OneNET application MQTT long connection](https://open.iot.10086.cn/doc/iot_platform/book/application-develop/mqtt/introduce.html)
+- [OneNET MQTT best practices](https://open.iot.10086.cn/doc/iot_platform/book/device-connect%26manager/MQTT/mqtt-example.html)
+- [OneNET message queue MQ](https://open.iot.10086.cn/doc/book/easy-manual/MQ.html)
+- [OneNET security authentication](https://open.iot.10086.cn/doc/book/easy-manual/auth.html)
+- [Apache Pulsar Go client](https://pkg.go.dev/github.com/apache/pulsar-client-go/pulsar)

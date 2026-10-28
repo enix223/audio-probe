@@ -1,0 +1,12 @@
+{
+  "malformed_bad_format.bin": "bad_format",
+  "malformed_bad_type.bin": "bad_type",
+  "malformed_bad_version.bin": "unsupported_version",
+  "malformed_length_mismatch.bin": "length_mismatch",
+  "malformed_opus_bad_toc.bin": "opus_empty_packet",
+  "malformed_opus_empty.bin": "opus_empty_packet",
+  "malformed_opus_oversize.bin": "opus_payload_too_large",
+  "malformed_payload_too_large.bin": "payload_too_large",
+  "malformed_reserved_flags.bin": "reserved_bits",
+  "malformed_truncated_header.bin": "truncated_header"
+}

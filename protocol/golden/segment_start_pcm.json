@@ -1,0 +1,18 @@
+{
+  "type": "segment_start",
+  "capture_id": "01J8Z4A1D7K2P5S9H3M6Q0T8V2",
+  "segment_id": 12,
+  "reason": "vad",
+  "t_ms": 123400,
+  "onset_t_ms": 123700,
+  "pre_roll_ms": 300,
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate": 16000,
+    "channels": 1,
+    "frame_ms": 20
+  },
+  "gain_db": null,
+  "label": "speech-01",
+  "tone": null
+}
